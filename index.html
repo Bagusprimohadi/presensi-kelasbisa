@@ -29,22 +29,24 @@
             box-shadow: 0 10px 30px rgba(0,0,0,0.1);
             border: 1px solid rgba(255,255,255,0.5);
         }
-        h2 { color: var(--primary); text-align: center; margin-bottom: 5px; font-size: 1.5rem; }
+        h2 { color: var(--primary); text-align: center; margin-bottom: 5px; font-size: 1.4rem; }
         .subtitle { text-align: center; color: #888; font-size: 0.8rem; margin-bottom: 25px; display: block; }
         
         .form-group { margin-bottom: 15px; position: relative; }
         label { display: block; font-size: 0.85rem; color: #666; margin-bottom: 5px; font-weight: 600; }
         input, select { 
             width: 100%; padding: 12px; border: 2px solid #d1dbdb; border-radius: 10px; 
-            box-sizing: border-box; transition: 0.3s;
+            box-sizing: border-box; transition: 0.3s; background: white;
         }
+        input:focus, select:focus { border-color: var(--primary); outline: none; }
         .btn-loc { background: #f0f0f0; border: none; padding: 5px 10px; font-size: 0.7rem; border-radius: 5px; cursor: pointer; color: var(--primary); margin-top: 5px; }
         
         button[type="submit"] { 
             width: 100%; padding: 15px; background: var(--primary); color: white; 
             border: none; border-radius: 10px; font-weight: bold; cursor: pointer; 
-            margin-top: 20px;
+            margin-top: 20px; transition: 0.3s;
         }
+        button[type="submit"]:hover { background: var(--accent); }
     </style>
 </head>
 <body>
@@ -55,21 +57,21 @@
         <form id="absenForm">
             <div class="form-group">
                 <label>Kode Pelatihan</label>
-                <select id="kode" required onchange="loadNames()"><option value="">Pilih Kode</option></select>
+                <select id="kode" required onchange="loadNames()"><option value="">Memuat Kode Pelatihan...</option></select>
             </div>
             <div class="form-group">
                 <label>Nama Lengkap</label>
-                <select id="nama" required><option value="">Pilih Nama</option></select>
+                <select id="nama" required><option value="">Pilih Kode Terlebih Dahulu</option></select>
             </div>
             <div class="form-group">
                 <label>Tanggal Presensi</label>
                 <input type="date" id="tanggal" required>
             </div>
-            <div class="form-group"><input type="text" id="instansi" placeholder="Asal Instansi/Sekolah" required></div>
-            <div class="form-group"><input type="text" id="bidang" placeholder="Bidang/Kelas/Jurusan" required></div>
-            <div class="form-group"><input type="text" id="nim" placeholder="NIK/NISN/NIM" required></div>
+            <div class="form-group"><input type="text" id="instansi" placeholder="Asal Instansi / Sekolah / Kampus" required></div>
+            <div class="form-group"><input type="text" id="bidang" placeholder="Bidang Kerja / Kelas / Jurusan Kuliah" required></div>
+            <div class="form-group"><input type="text" id="nim" placeholder="NIK / NISN / NIM" required></div>
             <div class="form-group">
-                <input type="text" id="daerah" placeholder="Asal Daerah (Kab/Kota)" required>
+                <input type="text" id="daerah" placeholder="Asal Daerah (Kab/Kota - Provinsi)" required>
                 <button type="button" class="btn-loc" onclick="detectLocation()">📍 Deteksi Lokasi Otomatis</button>
             </div>
             
@@ -83,24 +85,40 @@
         // Auto-set tanggal hari ini
         document.getElementById('tanggal').valueAsDate = new Date();
 
-        // Fetch list kode dari event_list.txt (pastikan file ini ada di root github)
-        fetch('event_list.txt')
-            .then(res => res.text())
-            .then(text => {
-                const codes = text.split('\n');
+        // Load Kode Pelatihan otomatis dari Spreadsheet 1 (Nama Sheet)
+        async function loadCodes() {
+            try {
+                const res = await fetch(`${GAS_URL}?cmd=getCodes`);
+                const codes = await res.json();
                 const select = document.getElementById('kode');
-                codes.forEach(c => { if(c.trim()) select.innerHTML += `<option value="${c.trim()}">${c.trim()}</option>`; });
-            });
+                select.innerHTML = '<option value="">Pilih Kode Pelatihan</option>';
+                codes.forEach(c => { 
+                    if(c.trim()) select.innerHTML += `<option value="${c}">${c}</option>`; 
+                });
+            } catch (err) {
+                document.getElementById('kode').innerHTML = '<option value="">Gagal memuat kode</option>';
+            }
+        }
 
-        // Load nama sesuai kode
+        loadCodes();
+
+        // Load Nama Lengkap berdasarkan Sheet/Kode yang dipilih
         async function loadNames() {
             const code = document.getElementById('kode').value;
             const select = document.getElementById('nama');
-            select.innerHTML = '<option>Loading...</option>';
-            const res = await fetch(`${GAS_URL}?cmd=getNames&code=${code}`);
-            const names = await res.json();
-            select.innerHTML = '<option value="">Pilih Nama</option>';
-            names.forEach(n => select.innerHTML += `<option value="${n}">${n}</option>`);
+            if (!code) {
+                select.innerHTML = '<option value="">Pilih Kode Terlebih Dahulu</option>';
+                return;
+            }
+            select.innerHTML = '<option>Loading nama...</option>';
+            try {
+                const res = await fetch(`${GAS_URL}?cmd=getNames&code=${code}`);
+                const names = await res.json();
+                select.innerHTML = '<option value="">Pilih Nama Lengkap</option>';
+                names.forEach(n => select.innerHTML += `<option value="${n}">${n}</option>`);
+            } catch (err) {
+                select.innerHTML = '<option value="">Gagal memuat nama</option>';
+            }
         }
 
         // Fungsi Deteksi Lokasi
@@ -113,16 +131,21 @@
                     try {
                         const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
                         const data = await res.json();
-                        input.value = `${data.address.city || data.address.town || data.address.county}, ${data.address.state}`;
+                        const city = data.address.city || data.address.town || data.address.county || '';
+                        const state = data.address.state || '';
+                        input.value = `${city} - ${state}`.trim();
                     } catch { input.value = "Gagal mendapatkan nama daerah"; }
                 }, () => { input.value = "Izin lokasi ditolak"; });
             } else { alert("Browser tidak mendukung geolokasi"); }
         }
 
+        // Submit Form Presensi
         document.getElementById('absenForm').onsubmit = async (e) => {
             e.preventDefault();
             const btn = e.target.querySelector('button[type="submit"]');
+            const originalText = btn.innerText;
             btn.innerText = "Mengirim...";
+            btn.disabled = true;
             
             const data = {
                 kode: document.getElementById('kode').value,
@@ -134,9 +157,19 @@
                 daerah: document.getElementById('daerah').value
             };
             
-            await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(data) });
-            alert("Presensi berhasil dicatat!");
-            btn.innerText = "Submit Presensi";
+            try {
+                await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(data) });
+                alert("Presensi berhasil dicatat!");
+                document.getElementById('absenForm').reset();
+                document.getElementById('tanggal').valueAsDate = new Date();
+                loadCodes();
+                document.getElementById('nama').innerHTML = '<option value="">Pilih Kode Terlebih Dahulu</option>';
+            } catch (err) {
+                alert("Terjadi kesalahan saat mengirim presensi.");
+            } finally {
+                btn.innerText = originalText;
+                btn.disabled = false;
+            }
         };
     </script>
 </body>
